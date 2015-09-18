@@ -1,0 +1,14 @@
+.code-block {
+	width: 45%;
+	height: 320px;
+	border: 1px solid #AAA;
+	margin: 5px;
+	display: inline-block;
+}
+.result-block {
+	width: 45%;
+	height: 320px;
+	border: 1px solid #AAA;
+	margin: 5px;
+	display: inline-block;
+}
