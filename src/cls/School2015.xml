@@ -1,0 +1,511 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2015.3 (Build 215U)" ts="2015-09-18 11:37:06">
+<Class name="School2015.Company">
+<Description>
+Participant's company's description</Description>
+<Super>%SerialObject,%Populate</Super>
+<TimeChanged>63813,27635.128924</TimeChanged>
+<TimeCreated>63813,23551.52669</TimeCreated>
+
+<Property name="Name">
+<Type>%String</Type>
+<Parameter name="MAXLEN" value="100"/>
+<Parameter name="POPSPEC" value="Company()"/>
+</Property>
+
+<Property name="Country">
+<Type>%String</Type>
+<Parameter name="POPSPEC" value="##class(School2015.PopulateHelper).GenCountry()"/>
+</Property>
+
+<Storage name="Default">
+<Type>%Library.CacheSerialState</Type>
+<State>CompanyState</State>
+<StreamLocation>^School2015.CompanyS</StreamLocation>
+<Data name="CompanyState">
+<Value name="1">
+<Value>Name</Value>
+</Value>
+<Value name="2">
+<Value>Country</Value>
+</Value>
+</Data>
+</Storage>
+</Class>
+
+
+<Class name="School2015.Group">
+<Description>
+Hackaton group's description</Description>
+<Super>%Persistent,%Populate</Super>
+<TimeChanged>63813,40357.503241</TimeChanged>
+<TimeCreated>63813,23551.243208</TimeCreated>
+
+<Property name="Participants">
+<Type>School2015.Participant</Type>
+<Cardinality>many</Cardinality>
+<Inverse>Group</Inverse>
+<Relationship>1</Relationship>
+</Property>
+
+<Property name="Leader">
+<Type>School2015.Participant</Type>
+</Property>
+
+<Property name="Points">
+<Type>%Integer</Type>
+<Parameter name="MINVAL" value="0"/>
+<Parameter name="POPSPEC" value="##class(School2015.PopulateHelper).GenStartingPoints()"/>
+</Property>
+
+<Method name="PrintInfo">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    write "{""Leader"":"""_..Leader.Name_" "_..Leader.Surname_"""}"
+    //write "{""Participants"":", !
+    //for i=1:1:..Participants.Count()
+    //{
+    //    write ..Participants.GetAt(i).Name_" "_..Participants.GetAt(i).Surname, !
+    //}
+    Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="AddPoints">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>ID:%String,point:%Integer=1</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<SqlProc>1</SqlProc>
+<Implementation><![CDATA[
+    set obj = ##class(School2015.Group).%OpenId(ID)
+    if ('obj) {
+        quit $$$ERROR("No such object")
+    } else {
+        set obj.Points = obj.Points + point
+        set sc = obj.%Save()
+        if $$$ISERR(sc) {
+                write "{""status"":""ERROR""}"
+                quit $$$ERROR($System.Error.FromException(sc))
+        } else 
+        {
+            write "{""status"":""OK""}"
+            quit $$$OK
+            }
+    }
+]]></Implementation>
+</Method>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DataLocation>^School2015.GroupD</DataLocation>
+<DefaultData>GroupDefaultData</DefaultData>
+<IdLocation>^School2015.GroupD</IdLocation>
+<IndexLocation>^School2015.GroupI</IndexLocation>
+<StreamLocation>^School2015.GroupS</StreamLocation>
+<ExtentSize>50</ExtentSize>
+<Data name="GroupDefaultData">
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>Leader</Value>
+</Value>
+<Value name="3">
+<Value>Points</Value>
+</Value>
+</Data>
+<Property name="%%CLASSNAME">
+<Selectivity>100.0000%</Selectivity>
+<AverageFieldSize>1</AverageFieldSize>
+</Property>
+<Property name="%%ID">
+<Selectivity>1</Selectivity>
+<AverageFieldSize>1.82</AverageFieldSize>
+</Property>
+<Property name="Leader">
+<Selectivity>3.2258%</Selectivity>
+<AverageFieldSize>1.78</AverageFieldSize>
+</Property>
+<Property name="PartCount">
+<Selectivity>100.0000%</Selectivity>
+<AverageFieldSize>1</AverageFieldSize>
+</Property>
+<Property name="Points">
+<Selectivity>100.0000%</Selectivity>
+<AverageFieldSize>1</AverageFieldSize>
+</Property>
+<SQLMap name="IDKEY">
+<BlockCount>-4</BlockCount>
+</SQLMap>
+</Storage>
+
+<Property name="PartCount">
+<Type>%Integer</Type>
+<Calculated>1</Calculated>
+<SqlComputeCode>set {PartCount} = ##class(School2015.Group).CalcPartCount({ID})</SqlComputeCode>
+<SqlComputed>1</SqlComputed>
+</Property>
+
+<Method name="PartCountGet">
+<ReturnType>%Integer</ReturnType>
+<ServerOnly>1</ServerOnly>
+<Implementation><![CDATA[    Quit ##class(School2015.Group).CalcPartCount(..%Id())
+]]></Implementation>
+</Method>
+
+<Method name="CalcPartCount">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>ID:%Integer</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+    set obj = ##class(School2015.Group).%OpenId(ID)
+    quit obj.Participants.Count()
+]]></Implementation>
+</Method>
+</Class>
+
+
+<Class name="School2015.Human">
+<Description>
+Human descriprion</Description>
+<Super>%Persistent,%Populate</Super>
+<TimeChanged>63813,38522.636264</TimeChanged>
+<TimeCreated>63813,23550.446383</TimeCreated>
+
+<Property name="Name">
+<Type>%String</Type>
+<Parameter name="POPSPEC" value="FirstName()"/>
+</Property>
+
+<Property name="Surname">
+<Type>%String</Type>
+<Parameter name="MAXLEN" value="100"/>
+<Parameter name="POPSPEC" value="LastName()"/>
+</Property>
+
+<UDLText name="T">
+<Content><![CDATA[
+// Property Contacts As array Of %String;
+
+]]></Content>
+</UDLText>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*Query QueryHumanContacts(ID As %String) As %Query(ROWSPEC = "Type:%String:Type,Value:%String:Value") [ SqlProc ]
+{
+}
+
+ClassMethod QueryHumanContactsExecute(ByRef qHandle As %Binary, ID As %String) As %Status
+{
+   set human = ##class(School2015.Human).%OpenId(ID) 
+   if '$IsObject(human) quit $$$ERROR() 
+   Set key = "" 
+   Do { 
+      Set email = human.Contacts.GetNext(.key) 
+      If (email '= "") { 
+         set $li(qHandle, *+1) = $lb(key, email) 
+      } 
+   } While (key '= "") 
+   kill ^||iter 
+   set ^||iter = 1 
+   Quit $$$OK
+}
+
+ClassMethod QueryHumanContactsClose(ByRef qHandle As %Binary) As %Status [ PlaceAfter = QueryHumanContactsExecute ]
+{
+	Quit $$$OK
+}
+
+ClassMethod QueryHumanContactsFetch(ByRef qHandle As %Binary, ByRef Row As %List, ByRef AtEnd As %Integer = 0) As %Status [ PlaceAfter = QueryHumanContactsExecute ]
+{
+   set rs=$get(qHandle) 
+   if $ll(rs)=0 { 
+      set Row="" 
+      set AtEnd=1 
+      quit $$$OK 
+   } 
+   if ^||iter <= $ll(rs) { 
+      set Row=$li(rs, ^||iter) 
+      set AtEnd=0 
+      set ^||iter = $increment(^||iter) 
+   } else { 
+      set Row="" 
+      set AtEnd=1 
+   } 
+   Quit $$$OK
+}*/
+]]></Content>
+</UDLText>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DataLocation>^School2015.HumanD</DataLocation>
+<DefaultData>HumanDefaultData</DefaultData>
+<IdLocation>^School2015.HumanD</IdLocation>
+<IndexLocation>^School2015.HumanI</IndexLocation>
+<StreamLocation>^School2015.HumanS</StreamLocation>
+<Data name="Contacts">
+<Attribute>Contacts</Attribute>
+<Structure>subnode</Structure>
+<Subscript>"Contacts"</Subscript>
+</Data>
+<Data name="HumanDefaultData">
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>Name</Value>
+</Value>
+<Value name="3">
+<Value>Surname</Value>
+</Value>
+</Data>
+</Storage>
+</Class>
+
+
+<Class name="School2015.Participant">
+<Description>
+Participan't description</Description>
+<Super>School2015.Human</Super>
+<TimeChanged>63813,40740.055685</TimeChanged>
+<TimeCreated>63813,23550.923273</TimeCreated>
+
+<Property name="Company">
+<Type>School2015.Company</Type>
+</Property>
+
+<Property name="Group">
+<Type>School2015.Group</Type>
+<Cardinality>one</Cardinality>
+<Inverse>Participants</Inverse>
+<Relationship>1</Relationship>
+</Property>
+
+<Index name="GroupIndex">
+<Properties>Group</Properties>
+</Index>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*Method OnPopulate() As %Status [ ServerOnly = 1 ]
+{
+	do ..Contacts.Clear()
+	set userName = $translate($extract(..Name, 1)_..Surname, " '.")
+	do ..Contacts.SetAt(userName, ##class(School2015.PopulateHelper).GenContactType(1))
+	set companyName = $translate(..Company.Name, " .'")
+	do ..Contacts.SetAt(userName_"@"_companyName_".com", ##class(School2015.PopulateHelper).GenContactType(2))
+	set phone = ##class(%Library.PopulateUtils).USPhone()
+	do ..Contacts.SetAt(phone, ##class(School2015.PopulateHelper).GenContactType(3))
+	quit $$$OK
+}
+*/
+]]></Content>
+</UDLText>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DefaultData>ParticipantDefaultData</DefaultData>
+<ExtentSize>150</ExtentSize>
+<Data name="ParticipantDefaultData">
+<Subscript>"Participant"</Subscript>
+<Value name="1">
+<Value>Company</Value>
+</Value>
+<Value name="2">
+<Value>Group</Value>
+</Value>
+<Value name="3">
+<Value>Carma</Value>
+</Value>
+</Data>
+<Property name="%%CLASSNAME">
+<Selectivity>100.0000%</Selectivity>
+<AverageFieldSize>24</AverageFieldSize>
+</Property>
+<Property name="%%ID">
+<Selectivity>1</Selectivity>
+<AverageFieldSize>2.28</AverageFieldSize>
+</Property>
+<Property name="Company">
+<Selectivity>0.6667%,Country:33.3333%,Name:0.6757%</Selectivity>
+<AverageFieldSize>28.23,Country:6.68,Name:17.55</AverageFieldSize>
+</Property>
+<Property name="Group">
+<Selectivity>1.5152%</Selectivity>
+<OutlierSelectivity>.333333:</OutlierSelectivity>
+<AverageFieldSize>1.23</AverageFieldSize>
+</Property>
+<Property name="Name">
+<Selectivity>1.0753%</Selectivity>
+<AverageFieldSize>5.3</AverageFieldSize>
+</Property>
+<Property name="Surname">
+<Selectivity>0.9709%</Selectivity>
+<AverageFieldSize>6.19</AverageFieldSize>
+</Property>
+<SQLMap name="GroupIndex">
+<BlockCount>-4</BlockCount>
+</SQLMap>
+</Storage>
+
+<Property name="Carma">
+<Type>%Integer</Type>
+</Property>
+</Class>
+
+
+<Class name="School2015.PopulateHelper">
+<Description>
+Helper to populate objects</Description>
+<TimeChanged>63813,28643.542323</TimeChanged>
+<TimeCreated>63813,24566.190933</TimeCreated>
+
+<Method name="GenContactType">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>type:%Integer</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+ set l = $lb("Scype", "Mail", "Phone")
+ quit $li(l, type)
+]]></Implementation>
+</Method>
+
+<Method name="GenStartingPoints">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[	quit 0
+]]></Implementation>
+</Method>
+
+<Method name="GenCountry">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set l = $lb("Russia", "Belorus", "Ukraine")
+	quit $li(l, $r($ll(l))+1)
+]]></Implementation>
+</Method>
+
+<Method name="GenTechnologie">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set l = $lb("REST", "Angular.JS", "Cache", "Ensamble", "JSON", 
+	            "React.JS", "DeepSee", "iKnow", "SQL", "Indices")
+	quit $li(l, $r($ll(l))+1)
+]]></Implementation>
+</Method>
+
+<Method name="GenProjectName">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+   set topic = ##class(%Library.PopulateUtils).Mission()
+   set topic = $extract(topic, 1, 50)
+   SET position=$LENGTH(topic)-$FIND($REVERSE(topic)," ")
+   quit $extract(topic, 1, position+1)
+]]></Implementation>
+</Method>
+
+<Method name="PopulateData">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	do ##class(School2015.Human).%KillExtent()
+	do ##class(School2015.Group).%KillExtent()
+	do ##class(School2015.Topic).%KillExtent()
+	
+	set m = 10	
+	do ##class(School2015.Participant).Populate(5*m)
+	do ##class(School2015.Group).Populate(5*m)
+	do ##class(School2015.Participant).Populate(10*m)	
+	do ##class(School2015.Topic).Populate(m)
+]]></Implementation>
+</Method>
+</Class>
+
+
+<Class name="School2015.Topic">
+<Description>
+Hackaton topic description</Description>
+<Super>%Persistent,%Populate</Super>
+<TimeChanged>63813,36779.261416</TimeChanged>
+<TimeCreated>63813,23551.856543</TimeCreated>
+
+<Property name="Name">
+<Type>%String</Type>
+<Parameter name="MAXLEN" value="100"/>
+<Parameter name="POPSPEC" value="##class(School2015.PopulateHelper).GenProjectName()"/>
+</Property>
+
+<Property name="Group">
+<Type>School2015.Group</Type>
+</Property>
+
+<Property name="Technologies">
+<Type>%String</Type>
+<Collection>list</Collection>
+<Parameter name="POPSPEC" value="##class(School2015.PopulateHelper).GenTechnologie():3"/>
+</Property>
+
+<Query name="QueryAllTopics">
+<Type>%SQLQuery</Type>
+<SqlProc>1</SqlProc>
+<SqlQuery><![CDATA[SELECT %ID,
+       Name,
+       "Group"->Leader->Name||' '||"Group"->Leader->Surname Leader,
+       "Group"->Points 
+  FROM School2015.Topic
+ ORDER BY Name]]></SqlQuery>
+<Parameter name="CONTAINID" value="1"/>
+</Query>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DataLocation>^School2015.TopicD</DataLocation>
+<DefaultData>TopicDefaultData</DefaultData>
+<IdLocation>^School2015.TopicD</IdLocation>
+<IndexLocation>^School2015.TopicI</IndexLocation>
+<StreamLocation>^School2015.TopicS</StreamLocation>
+<ExtentSize>10</ExtentSize>
+<Data name="TopicDefaultData">
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>Name</Value>
+</Value>
+<Value name="3">
+<Value>Group</Value>
+</Value>
+<Value name="4">
+<Value>Technologies</Value>
+</Value>
+</Data>
+<Property name="%%CLASSNAME">
+<Selectivity>100.0000%</Selectivity>
+<AverageFieldSize>1</AverageFieldSize>
+</Property>
+<Property name="%%ID">
+<Selectivity>1</Selectivity>
+<AverageFieldSize>1.1</AverageFieldSize>
+</Property>
+<Property name="Group">
+<Selectivity>11.1111%</Selectivity>
+<AverageFieldSize>1.6</AverageFieldSize>
+</Property>
+<Property name="Name">
+<Selectivity>12.5000%</Selectivity>
+<AverageFieldSize>44</AverageFieldSize>
+</Property>
+<Property name="Technologies">
+<Selectivity>11.1111%</Selectivity>
+<AverageFieldSize>14.7</AverageFieldSize>
+</Property>
+<SQLMap name="IDKEY">
+<BlockCount>-4</BlockCount>
+</SQLMap>
+</Storage>
+</Class>
+</Export>
