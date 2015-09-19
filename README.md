@@ -1,6 +1,9 @@
 # JavaScript ODM for InterSystems Caché
 JavaScript Object Data Model - easiest access to InterSystems Caché database from JavaScript.
 
+### Note
+This project is a subject of InterSystems innovations school 2015. The code in this repository is provided "as-is" and not ready for production use.
+
 ### Usage
 1. Include to your application script that are included in src/index.html file;
 2. Import src/cls/CJS.xml file into Caché (src/cls/School2015.xml is a demo package);
