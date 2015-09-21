@@ -13,6 +13,7 @@ This project is a subject of InterSystems innovations school 2015. The code in t
 ### Features
 ```js
 // .connect("Server address and port", "Namespace", [Any Packages/classes], callback())
+// Note: all the callbacks represented here are asynchronous and may be triggered in any order.
 cjs.connector.connect("http://172.16.2.172:57776/", "Samples", ["School2015"], function (cache) {
 
   // creating a new object
