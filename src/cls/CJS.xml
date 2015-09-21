@@ -1,0 +1,370 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2015.3 (Build 215U)" ts="2015-09-21 23:01:15">
+<Class name="CJS.AbstractREST">
+<Super>%CSP.REST</Super>
+<TimeChanged>63812,61967.497909</TimeChanged>
+<TimeCreated>63812,61862.539451</TimeCreated>
+
+<Parameter name="UseSession">
+<Type>Integer</Type>
+<Default>1</Default>
+</Parameter>
+
+<Method name="DispatchRequest">
+<Description><![CDATA[
+Dispatch a REST request according to URL and Method.<br>
+Add param Namespace to a request to execute MDX in desired namespace.]]></Description>
+<Internal>1</Internal>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pUrl:%String,pMethod:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    #dim %response As %CSP.Response
+    #dim %request As %CSP.Request
+    #dim %session As %CSP.Session
+    
+    Do %response.SetHeader("Access-Control-Allow-Origin","*")
+    Do %response.SetHeader("Access-Control-Allow-Credentials","true")
+    Do %response.SetHeader("Access-Control-Allow-Methods","GET, PUT, POST, DELETE, OPTIONS")
+    Do %response.SetHeader("Access-Control-Max-Age","10000")
+    Do %response.SetHeader("Access-Control-Allow-Headers","Content-Type, Authorization, Accept-Language, X-Requested-With") 
+    
+    Set %response.CharSet = "utf-8"
+    Set %response.ContentType="application/json"
+
+    Set %session.Language=$$MatchLanguage^%occMessages(%request.GetCgiEnv("HTTP_ACCEPT_LANGUAGE"),"%CSP","+s") // Localization support
+    Set %response.Language=%session.Language
+    
+    Quit tSC
+]]></Implementation>
+</Method>
+</Class>
+
+
+<Class name="CJS.ClassList">
+<TimeChanged>63813,39540.554202</TimeChanged>
+<TimeCreated>63812,59854.127526</TimeCreated>
+
+<Method name="WriteJSON">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>namespace:%String,classList:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    zn:$GET(namespace)'="" namespace
+    set classList = "," _ classList
+    
+    set ^CJSNS = namespace
+    set root = ##class(%ZEN.proxyObject).%New()
+    set classes = ##class(%ZEN.proxyObject).%New()
+    set root.classes = classes
+    set root.token = "test123"
+
+    set classRes = ##class(%ResultSet).%New("%Dictionary.ClassDefinition:Summary")
+    do classRes.Execute()
+
+    while (classRes.Next()) {
+        set className = classRes.Data("Name")
+        if ($EXTRACT(className, 1, 1) = "%") && ($NAMESPACE '= "%SYS") { continue }
+        if '((","_className) [ classList) { continue }
+        
+        set class = ##class(%ZEN.proxyObject).%New()
+        set classDefinition = ##class(%Dictionary.CompiledClass).%OpenId(className)
+        if (classDefinition = "") {
+            //write "{""error"": ""Wrong className""}"
+            continue
+        }
+        
+        set count = classDefinition.Properties.Count()
+        for i=1:1:count {
+            set p = classDefinition.Properties.GetAt(i)
+            if ($EXTRACT(p.Name, 1) = "%") { continue }
+            set oProp = ##class(%ZEN.proxyObject).%New()
+            set oProp.type = "property"
+            do class.%DispatchSetProperty(p.Name, oProp)
+        }
+        
+        set count = classDefinition.Methods.Count()
+        for i=1:1:count {
+            set p = classDefinition.Methods.GetAt(i)
+            if ($EXTRACT(p.Name, 1) = "%") { continue }
+            set oProp = ##class(%ZEN.proxyObject).%New()
+            if (p.ClassMethod) {
+                set oProp.type = "classmethod"
+            } else {
+                set oProp.type = "method"
+            }
+            do class.%DispatchSetProperty(p.Name, oProp)
+        }
+        
+        do classes.%DispatchSetProperty(className, class)
+    }
+    
+    do root.%ToJSON("o")
+    
+    quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="open">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>namespace:%String="",className:%String,id:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    zn:(namespace'="") namespace
+    set object = $CLASSMETHOD(className, "%OpenId", id)
+    // null returned if not found, do not change
+    do ##class(%ZEN.Auxiliary.jsonProvider).%ObjectToJSON(object, "o")
+    quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="query">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>namespace="",className,conditions,order,aggr</FormalSpec>
+<Implementation><![CDATA[
+    zn:(namespace'="") namespace
+    set sql = "SELECT " _ $case(aggr="", 1: "*", :aggr) _ " FROM " _ className
+    set conditions = $REPLACE(conditions, "$id", "ID")
+    if (conditions '= "") {
+        set list = $LISTFROMSTRING(conditions, ",")
+        set sql = sql _ " WHERE"
+        set len = $LL(list)
+        for i=1:1:len {
+            set sql = sql _ " " _ $LISTGET(list, i) _ $case(i'=len, 1:" AND", :"")
+        }
+    }
+    set order = $REPLACE(order, "$id", "ID")
+    if (order '= "") {
+        set sql = sql _ " ORDER BY " _ order
+    }
+    do ##class(%ZEN.Auxiliary.jsonSQLProvider).%WriteJSONFromSQL(, sql, "u")
+    quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="exec">
+<Description>
+run method</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>namespace="",className,methodName,objectId,params=""</FormalSpec>
+<Implementation><![CDATA[
+    zn:(namespace'="") namespace
+    //w namespace, " ", className, " ", methodName, " ", objectId
+    set methodDefinition = ##class(%Dictionary.MethodDefinition).%OpenId(className_"||"_methodName)
+    set args = $LISTFROMSTRING(params, ",") // simple
+    set g = $LL(args)
+    for i=1:1:$LL(args) {
+        set g(i) = $LISTGET(args, i)
+    }
+    if (methodDefinition.ClassMethod) {
+        do $CLASSMETHOD(className, methodName, g...)
+    } else {
+        set obj = $CLASSMETHOD(className, "%OpenId", objectId)
+        if (obj = "") {
+            write "{""error"":""Unable to open "_className_" with ID="_objectId_"""}"
+            quit
+        }
+        do $METHOD(obj, methodName, g...)
+    }
+]]></Implementation>
+</Method>
+
+<Method name="updProperties">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>proxyObject</FormalSpec>
+<Implementation><![CDATA[
+    set className = $PROPERTY(proxyObject, "$class")
+    //w className, !
+    set i = 0
+    set new = 0
+    set obj = $CLASSMETHOD(className, "%OpenId", $PROPERTY(proxyObject, "$id"))
+    if (obj = "") { // new object
+        set obj = $CLASSMETHOD(className, "%New")
+        set new = 1
+        if (obj = "") {
+            write "{""error"":""FATAL ERROR! Unable to create "_className_"""}"
+            quit
+        }
+    }
+    set classDefinition = ##class(%Dictionary.CompiledClass).%OpenId(className)
+    //zw proxyObject w !, !
+    for j=1:1:classDefinition.Properties.Count() {
+        set pname = classDefinition.Properties.GetAt(j).Name
+        //w "|", pname, proxyObject.%DispatchGetProperty(pname)
+        if (proxyObject.%DispatchGetProperty(pname) '= "") {
+            set property = $PROPERTY(proxyObject, pname)
+            if ($ISOBJECT(property)) {
+                set ret = ..updProperties(property)
+                set $PROPERTY(obj, pname) = ret
+            } else {
+                set $PROPERTY(obj, pname) = $PROPERTY(proxyObject, pname)
+                set i = i + 1
+            }
+        }
+    }
+    if (i '= 0) {
+        set status = obj.%Save()
+        if ($$$ISERR(status)) {
+            w "{""error"":"""_$System.Status.GetErrorText(status)_"""}"
+            quit
+        } elseif (new) {
+            do ..open(, className, obj.%Id())
+        }
+    }
+    quit obj
+]]></Implementation>
+</Method>
+
+<Method name="save">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>namespace:%String="",objectJSON</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    zn:(namespace'="") namespace
+    //do object.%Save()
+    set st = ##class(%ZEN.Auxiliary.jsonProvider).%ConvertJSONToObject(objectJSON, "%ZEN.proxyObject", .object)
+    if ($$$ISERR(st)) {
+        set error = $System.Status.GetErrorText(st)
+        write "{""error"":"""_error_"""}"
+        quit $$$ERROR(error)
+    }
+    
+    do ..updProperties(.object)
+    
+    quit $$$OK
+]]></Implementation>
+</Method>
+</Class>
+
+
+<Class name="CJS.REST">
+<Description>
+REST interface for CJS</Description>
+<Super>%CSP.REST</Super>
+<TimeChanged>63813,37066.48073</TimeChanged>
+<TimeCreated>63812,59921.081349</TimeCreated>
+
+<XData name="UrlMap">
+<Data><![CDATA[
+<Routes>
+   <Route Url="/connect" Method="GET" Call="connect"/> <!-- ?NS=SAMPLES -->
+   <Route Url="/open" Method="GET" Call="open"/>
+   <Route Url="/save" Method="GET" Call="save"/>
+   <Route Url="/query" Method="GET" Call="query"/>
+   <Route Url="/exec" Method="GET" Call="exec"/>
+</Routes>
+]]></Data>
+</XData>
+
+<Method name="head">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    #dim %response As %CSP.Response
+    #dim %request As %CSP.Request
+    #dim %session As %CSP.Session
+    
+    Do %response.SetHeader("Access-Control-Allow-Origin","*")
+    Do %response.SetHeader("Access-Control-Allow-Credentials","true")
+    Do %response.SetHeader("Access-Control-Allow-Methods","GET, PUT, POST, DELETE, OPTIONS")
+    Do %response.SetHeader("Access-Control-Max-Age","10000")
+    Do %response.SetHeader("Access-Control-Allow-Headers","Content-Type, Authorization, Accept-Language, X-Requested-With") 
+    
+    Set %response.CharSet = "utf-8"
+    Set %response.ContentType="application/json"
+
+    Set %session.Language=$$MatchLanguage^%occMessages(%request.GetCgiEnv("HTTP_ACCEPT_LANGUAGE"),"%CSP","+s") // Localization support
+    Set %response.Language=%session.Language   
+    
+    quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="connect">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    do ..head()
+    set ns = %request.Get("NS")
+    set classList = %request.Get("classList")
+    if ('##class(%SYS.Namespace).Exists($get(ns))) {
+        write "{""error"":""Namespace '" _ $get(ns) _ "' does not exists.""}"
+        quit $$$OK
+    }
+    do ##class(ClassList).WriteJSON(ns, $get(classList))
+    quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="open">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    do ..head()
+    set ns = %request.Get("NS")
+    set className = %request.Get("className")
+    set id = %request.Get("id")
+    if ('##class(%SYS.Namespace).Exists($get(ns))) {
+        write "{""error"":""Namespace '" _ $get(ns) _ "' does not exists.""}"
+        quit $$$OK
+    }
+    do ##class(ClassList).open(ns, $get(className), $get(id))
+    quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="save">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    do ..head()
+    set ns = %request.Get("NS")
+    set JSON = %request.Get("object")
+    if ('##class(%SYS.Namespace).Exists($get(ns))) {
+        write "{""error"":""Namespace '" _ $get(ns) _ "' does not exists.""}"
+        quit $$$OK
+    }
+    do ##class(ClassList).save(ns, $get(JSON))
+    quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="query">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    do ..head()
+    set ns = %request.Get("NS")
+    set className = %request.Get("className")
+    set where = %request.Get("where")
+    set order = %request.Get("order")
+    set aggr = %request.Get("aggr")
+    if ('##class(%SYS.Namespace).Exists($get(ns))) {
+        write "{""error"":""Namespace '" _ $get(ns) _ "' does not exists.""}"
+        quit $$$OK
+    }
+    do ##class(ClassList).query(ns, $get(className), $get(where), $get(order), $get(aggr))
+    quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="exec">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    do ..head()
+    set ns = %request.Get("NS")
+    set className = %request.Get("className")
+    set methodName = %request.Get("method")
+    set params = %request.Get("params")
+    set id = %request.Get("id")
+    if ('##class(%SYS.Namespace).Exists($get(ns))) {
+        write "{""error"":""Namespace '" _ $get(ns) _ "' does not exists.""}"
+        quit $$$OK
+    }
+    do ##class(ClassList).exec(ns, $get(className), $get(methodName), $get(id), params)
+    quit $$$OK
+]]></Implementation>
+</Method>
+</Class>
+</Export>
