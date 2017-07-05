@@ -1,0 +1,975 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2017.2 (Build 543U)" ts="2017-07-05 17:41:16">
+<Class name="CacheJavaScriptODM.AbstractREST">
+<Super>%CSP.REST</Super>
+<TimeChanged>64469,62858.504697</TimeChanged>
+<TimeCreated>64469,62858.504697</TimeCreated>
+
+<Parameter name="UseSession">
+<Type>Integer</Type>
+<Default>1</Default>
+</Parameter>
+
+<Method name="DispatchRequest">
+<Description><![CDATA[
+Dispatch a REST request according to URL and Method.<br>
+Add param Namespace to a request to execute MDX in desired namespace.]]></Description>
+<Internal>1</Internal>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pUrl:%String,pMethod:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    #dim %response As %CSP.Response
+    #dim %request As %CSP.Request
+    #dim %session As %CSP.Session
+    
+    Do %response.SetHeader("Access-Control-Allow-Origin","*")
+    Do %response.SetHeader("Access-Control-Allow-Credentials","true")
+    Do %response.SetHeader("Access-Control-Allow-Methods","GET, PUT, POST, DELETE, OPTIONS")
+    Do %response.SetHeader("Access-Control-Max-Age","10000")
+    Do %response.SetHeader("Access-Control-Allow-Headers","Content-Type, Authorization, Accept-Language, X-Requested-With") 
+    
+    Set %response.CharSet = "utf-8"
+    Set %response.ContentType="application/json"
+
+    Set %session.Language=$$MatchLanguage^%occMessages(%request.GetCgiEnv("HTTP_ACCEPT_LANGUAGE"),"%CSP","+s") // Localization support
+    Set %response.Language=%session.Language
+    
+    Quit tSC
+]]></Implementation>
+</Method>
+</Class>
+
+
+<Class name="CacheJavaScriptODM.ClassList">
+<TimeChanged>64469,62858.658251</TimeChanged>
+<TimeCreated>64469,62858.658251</TimeCreated>
+
+<Method name="WriteJSON">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>namespace:%String,classList:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    zn:$GET(namespace)'="" namespace
+    set classList = "," _ classList
+    
+    set root = ##class(%ZEN.proxyObject).%New()
+    set classes = ##class(%ZEN.proxyObject).%New()
+    set root.classes = classes
+    set root.token = "test123"
+
+    set classRes = ##class(%ResultSet).%New("%Dictionary.ClassDefinition:Summary")
+    do classRes.Execute()
+
+    while (classRes.Next()) {
+        set className = classRes.Data("Name")
+        if ($EXTRACT(className, 1, 1) = "%") && ($NAMESPACE '= "%SYS") { continue }
+        if '((","_className) [ classList) { continue }
+        
+        set class = ##class(%ZEN.proxyObject).%New()
+        set classDefinition = ##class(%Dictionary.CompiledClass).%OpenId(className)
+        if (classDefinition = "") {
+            //write "{""error"": ""Wrong className""}"
+            continue
+        }
+        
+        set count = classDefinition.Properties.Count()
+        for i=1:1:count {
+            set p = classDefinition.Properties.GetAt(i)
+            if ($EXTRACT(p.Name, 1) = "%") { continue }
+            set oProp = ##class(%ZEN.proxyObject).%New()
+            set oProp.type = "property"
+            do class.%DispatchSetProperty(p.Name, oProp)
+        }
+        
+        set count = classDefinition.Methods.Count()
+        for i=1:1:count {
+            set p = classDefinition.Methods.GetAt(i)
+            if ($EXTRACT(p.Name, 1) = "%") { continue }
+            set oProp = ##class(%ZEN.proxyObject).%New()
+            if (p.ClassMethod) {
+                set oProp.type = "classmethod"
+            } else {
+                set oProp.type = "method"
+            }
+            do class.%DispatchSetProperty(p.Name, oProp)
+        }
+        
+        do classes.%DispatchSetProperty(className, class)
+    }
+    
+    do root.%ToJSON("o")
+    
+    quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="open">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>namespace:%String="",className:%String,id:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    zn:(namespace'="") namespace
+    set object = $CLASSMETHOD(className, "%OpenId", id)
+    // null returned if not found, do not change
+    do ##class(%ZEN.Auxiliary.jsonProvider).%ObjectToJSON(object, "o")
+    quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="query">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>namespace="",className,conditions,order,aggr</FormalSpec>
+<Implementation><![CDATA[
+    zn:(namespace'="") namespace
+    set sql = "SELECT " _ $case(aggr="", 1: "*", :aggr) _ " FROM " _ className
+    set conditions = $REPLACE(conditions, "$id", "ID")
+    if (conditions '= "") {
+        set list = $LISTFROMSTRING(conditions, ",")
+        set sql = sql _ " WHERE"
+        set len = $LL(list)
+        for i=1:1:len {
+            set sql = sql _ " " _ $LISTGET(list, i) _ $case(i'=len, 1:" AND", :"")
+        }
+    }
+    set order = $REPLACE(order, "$id", "ID")
+    if (order '= "") {
+        set sql = sql _ " ORDER BY " _ order
+    }
+    do ##class(%ZEN.Auxiliary.jsonSQLProvider).%WriteJSONFromSQL(, sql, "u")
+    quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="exec">
+<Description>
+run method</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>namespace="",className,methodName,objectId,params=""</FormalSpec>
+<Implementation><![CDATA[
+    zn:(namespace'="") namespace
+    //w namespace, " ", className, " ", methodName, " ", objectId
+    set methodDefinition = ##class(%Dictionary.MethodDefinition).%OpenId(className_"||"_methodName)
+    set args = $LISTFROMSTRING(params, ",") // simple
+    set g = $LL(args)
+    for i=1:1:$LL(args) {
+        set g(i) = $LISTGET(args, i)
+    }
+    if (methodDefinition.ClassMethod) {
+        do $CLASSMETHOD(className, methodName, g...)
+    } else {
+        set obj = $CLASSMETHOD(className, "%OpenId", objectId)
+        if (obj = "") {
+            write "{""error"":""Unable to open "_className_" with ID="_objectId_"""}"
+            quit
+        }
+        do $METHOD(obj, methodName, g...)
+    }
+]]></Implementation>
+</Method>
+
+<Method name="updProperties">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>proxyObject</FormalSpec>
+<Implementation><![CDATA[
+    set className = $PROPERTY(proxyObject, "$class")
+    //w className, !
+    set i = 0
+    set new = 0
+    set obj = $CLASSMETHOD(className, "%OpenId", $PROPERTY(proxyObject, "$id"))
+    if (obj = "") { // new object
+        set obj = $CLASSMETHOD(className, "%New")
+        set new = 1
+        if (obj = "") {
+            write "{""error"":""FATAL ERROR! Unable to create "_className_"""}"
+            quit
+        }
+    }
+    set classDefinition = ##class(%Dictionary.CompiledClass).%OpenId(className)
+    //zw proxyObject w !, !
+    for j=1:1:classDefinition.Properties.Count() {
+        set pname = classDefinition.Properties.GetAt(j).Name
+        //w "|", pname, proxyObject.%DispatchGetProperty(pname)
+        if (proxyObject.%DispatchGetProperty(pname) '= "") {
+            set property = $PROPERTY(proxyObject, pname)
+            if ($ISOBJECT(property)) {
+                set ret = ..updProperties(property)
+                set $PROPERTY(obj, pname) = ret
+            } else {
+                set $PROPERTY(obj, pname) = $PROPERTY(proxyObject, pname)
+                set i = i + 1
+            }
+        }
+    }
+    if (i '= 0) {
+        set status = obj.%Save()
+        if ($$$ISERR(status)) {
+            w "{""error"":"""_$System.Status.GetErrorText(status)_"""}"
+            quit
+        } elseif (new) {
+            do ..open(, className, obj.%Id())
+        }
+    }
+    quit obj
+]]></Implementation>
+</Method>
+
+<Method name="save">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>namespace:%String="",objectJSON</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    zn:(namespace'="") namespace
+    //do object.%Save()
+    set st = ##class(%ZEN.Auxiliary.jsonProvider).%ConvertJSONToObject(objectJSON, "%ZEN.proxyObject", .object)
+    if ($$$ISERR(st)) {
+        set error = $System.Status.GetErrorText(st)
+        write "{""error"":"""_error_"""}"
+        quit $$$ERROR(error)
+    }
+    
+    do ..updProperties(.object)
+    
+    quit $$$OK
+]]></Implementation>
+</Method>
+</Class>
+
+
+<Class name="CacheJavaScriptODM.Installer">
+<Description>
+Importing this class will enable CJS web application.</Description>
+<Super>%Projection.AbstractProjection</Super>
+<TimeChanged>64469,62467.011755</TimeChanged>
+<TimeCreated>64469,62080.362008</TimeCreated>
+
+<Parameter name="DispatchClass">
+<Default>CacheJavaScriptODM.REST</Default>
+</Parameter>
+
+<Parameter name="WebAppName">
+<Default>/CJS</Default>
+</Parameter>
+
+<Projection name="Reference">
+<Type>Installer</Type>
+</Projection>
+
+<Method name="RegisterWebApplication">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>name:%String,spec</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    new $Namespace
+    try {
+    	set $Namespace = "%SYS"
+    } catch (err) {
+    	return err
+    }
+    set st = $$$OK
+    if ('##class(Security.Applications).Exists(name)) {
+        write !,"Creating WEB application """_name_"""..."
+        set st = ##class(Security.Applications).Create(name, .spec)
+        write !, "WEB application """_name_""" is created."
+    } else { // ensure configuration matches in case of updating from old terminal versions
+        write !, "Updating web application """_name_"""..."
+        set st = ##class(Security.Applications).Modify(name, .spec)
+        write !, "WEB application """_name_""" is updated."
+    }
+    return st
+]]></Implementation>
+</Method>
+
+<Method name="RemoveWebApplication">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>name:%String</FormalSpec>
+<Implementation><![CDATA[
+    new $Namespace
+    set $Namespace = "%SYS"
+    set st = $$$OK
+    if (##class(Security.Applications).Exists(name)) {
+        do ##class(Security.Applications).Get(name, .props)
+        if (props("DispatchClass") '= ..#DispatchClass) && (name = "/terminal") {
+            write !, "Won't delete WEB-application """_name_""" because it does not refer to dispatch class anymore."
+        } else {
+            write !, "Deleting WEB application """_name_"""..."
+            set st = ##class(Security.Applications).Delete(name)
+            write !, "WEB application """_name_""" was successfully deleted."
+        }
+    }
+    return st
+]]></Implementation>
+</Method>
+
+<Method name="CreateProjection">
+<Description>
+This method is invoked when a class is compiled.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[cls:%String,&params]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	write !, "Installing CJS application to " _ $namespace
+    set cspProperties("AutheEnabled") = $$$AutheUnauthenticated
+    set cspProperties("NameSpace") = $namespace
+    set cspProperties("Description") = "A WEB application for Cache JavaScript ODM."
+    set cspProperties("IsNameSpaceDefault") = $$$NO
+    set cspProperties("DispatchClass") = ..#DispatchClass
+    return ..RegisterWebApplication(..#WebAppName, .cspProperties)
+]]></Implementation>
+</Method>
+
+<Method name="RemoveProjection">
+<Description>
+This method is invoked when a class is compiled.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[cls:%String,&params,recompile:%Boolean]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	write !, "Removing CJS application from " _ $namespace
+    return ..RemoveWebApplication(..#WebAppName)
+]]></Implementation>
+</Method>
+</Class>
+
+
+<Class name="CacheJavaScriptODM.REST">
+<Description>
+REST interface for CacheJavaScriptODM</Description>
+<Super>%CSP.REST</Super>
+<TimeChanged>64469,62858.579156</TimeChanged>
+<TimeCreated>64469,62858.579156</TimeCreated>
+
+<XData name="UrlMap">
+<Data><![CDATA[
+<Routes>
+   <Route Url="/connect" Method="GET" Call="connect"/> <!-- ?NS=SAMPLES -->
+   <Route Url="/open" Method="GET" Call="open"/>
+   <Route Url="/save" Method="GET" Call="save"/>
+   <Route Url="/query" Method="GET" Call="query"/>
+   <Route Url="/exec" Method="GET" Call="exec"/>
+</Routes>
+]]></Data>
+</XData>
+
+<Method name="head">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    #dim %response As %CSP.Response
+    #dim %request As %CSP.Request
+    #dim %session As %CSP.Session
+    
+    Do %response.SetHeader("Access-Control-Allow-Origin","*")
+    Do %response.SetHeader("Access-Control-Allow-Credentials","true")
+    Do %response.SetHeader("Access-Control-Allow-Methods","GET, PUT, POST, DELETE, OPTIONS")
+    Do %response.SetHeader("Access-Control-Max-Age","10000")
+    Do %response.SetHeader("Access-Control-Allow-Headers","Content-Type, Authorization, Accept-Language, X-Requested-With") 
+    
+    Set %response.CharSet = "utf-8"
+    Set %response.ContentType="application/json"
+
+    Set %session.Language=$$MatchLanguage^%occMessages(%request.GetCgiEnv("HTTP_ACCEPT_LANGUAGE"),"%CSP","+s") // Localization support
+    Set %response.Language=%session.Language   
+    
+    quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="connect">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    do ..head()
+    set ns = %request.Get("NS")
+    set classList = %request.Get("classList")
+    if ('##class(%SYS.Namespace).Exists($get(ns))) {
+        write "{""error"":""Namespace '" _ $get(ns) _ "' does not exists.""}"
+        quit $$$OK
+    }
+    do ##class(ClassList).WriteJSON(ns, $get(classList))
+    quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="open">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    do ..head()
+    set ns = %request.Get("NS")
+    set className = %request.Get("className")
+    set id = %request.Get("id")
+    if ('##class(%SYS.Namespace).Exists($get(ns))) {
+        write "{""error"":""Namespace '" _ $get(ns) _ "' does not exists.""}"
+        quit $$$OK
+    }
+    do ##class(ClassList).open(ns, $get(className), $get(id))
+    quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="save">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    do ..head()
+    set ns = %request.Get("NS")
+    set JSON = %request.Get("object")
+    if ('##class(%SYS.Namespace).Exists($get(ns))) {
+        write "{""error"":""Namespace '" _ $get(ns) _ "' does not exists.""}"
+        quit $$$OK
+    }
+    do ##class(ClassList).save(ns, $get(JSON))
+    quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="query">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    do ..head()
+    set ns = %request.Get("NS")
+    set className = %request.Get("className")
+    set where = %request.Get("where")
+    set order = %request.Get("order")
+    set aggr = %request.Get("aggr")
+    if ('##class(%SYS.Namespace).Exists($get(ns))) {
+        write "{""error"":""Namespace '" _ $get(ns) _ "' does not exists.""}"
+        quit $$$OK
+    }
+    do ##class(ClassList).query(ns, $get(className), $get(where), $get(order), $get(aggr))
+    quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="exec">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    do ..head()
+    set ns = %request.Get("NS")
+    set className = %request.Get("className")
+    set methodName = %request.Get("method")
+    set params = %request.Get("params")
+    set id = %request.Get("id")
+    if ('##class(%SYS.Namespace).Exists($get(ns))) {
+        write "{""error"":""Namespace '" _ $get(ns) _ "' does not exists.""}"
+        quit $$$OK
+    }
+    do ##class(ClassList).exec(ns, $get(className), $get(methodName), $get(id), params)
+    quit $$$OK
+]]></Implementation>
+</Method>
+</Class>
+
+
+<Class name="School2015.Company">
+<Description>
+Participant's company's description</Description>
+<Super>%SerialObject,%Populate</Super>
+<TimeChanged>63813,27635.128924</TimeChanged>
+<TimeCreated>63813,23551.52669</TimeCreated>
+
+<Property name="Name">
+<Type>%String</Type>
+<Parameter name="MAXLEN" value="100"/>
+<Parameter name="POPSPEC" value="Company()"/>
+</Property>
+
+<Property name="Country">
+<Type>%String</Type>
+<Parameter name="POPSPEC" value="##class(School2015.PopulateHelper).GenCountry()"/>
+</Property>
+
+<Storage name="Default">
+<Type>%Library.CacheSerialState</Type>
+<State>CompanyState</State>
+<StreamLocation>^School2015.CompanyS</StreamLocation>
+<Data name="CompanyState">
+<Value name="1">
+<Value>Name</Value>
+</Value>
+<Value name="2">
+<Value>Country</Value>
+</Value>
+</Data>
+</Storage>
+</Class>
+
+
+<Class name="School2015.Group">
+<Description>
+Hackaton group's description</Description>
+<Super>%Persistent,%Populate</Super>
+<TimeChanged>63813,40357.503241</TimeChanged>
+<TimeCreated>63813,23551.243208</TimeCreated>
+
+<Property name="Participants">
+<Type>School2015.Participant</Type>
+<Cardinality>many</Cardinality>
+<Inverse>Group</Inverse>
+<Relationship>1</Relationship>
+</Property>
+
+<Property name="Leader">
+<Type>School2015.Participant</Type>
+</Property>
+
+<Property name="Points">
+<Type>%Integer</Type>
+<Parameter name="MINVAL" value="0"/>
+<Parameter name="POPSPEC" value="##class(School2015.PopulateHelper).GenStartingPoints()"/>
+</Property>
+
+<Method name="PrintInfo">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    write "{""Leader"":"""_..Leader.Name_" "_..Leader.Surname_"""}"
+    //write "{""Participants"":", !
+    //for i=1:1:..Participants.Count()
+    //{
+    //    write ..Participants.GetAt(i).Name_" "_..Participants.GetAt(i).Surname, !
+    //}
+    Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="AddPoints">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>ID:%String,point:%Integer=1</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<SqlProc>1</SqlProc>
+<Implementation><![CDATA[
+    set obj = ##class(School2015.Group).%OpenId(ID)
+    if ('obj) {
+        quit $$$ERROR("No such object")
+    } else {
+        set obj.Points = obj.Points + point
+        set sc = obj.%Save()
+        if $$$ISERR(sc) {
+                write "{""status"":""ERROR""}"
+                quit $$$ERROR($System.Error.FromException(sc))
+        } else 
+        {
+            write "{""status"":""OK""}"
+            quit $$$OK
+            }
+    }
+]]></Implementation>
+</Method>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DataLocation>^School2015.GroupD</DataLocation>
+<DefaultData>GroupDefaultData</DefaultData>
+<IdLocation>^School2015.GroupD</IdLocation>
+<IndexLocation>^School2015.GroupI</IndexLocation>
+<StreamLocation>^School2015.GroupS</StreamLocation>
+<ExtentSize>50</ExtentSize>
+<Data name="GroupDefaultData">
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>Leader</Value>
+</Value>
+<Value name="3">
+<Value>Points</Value>
+</Value>
+</Data>
+<Property name="%%CLASSNAME">
+<Selectivity>100.0000%</Selectivity>
+<AverageFieldSize>1</AverageFieldSize>
+</Property>
+<Property name="%%ID">
+<Selectivity>1</Selectivity>
+<AverageFieldSize>1.82</AverageFieldSize>
+</Property>
+<Property name="Leader">
+<Selectivity>3.2258%</Selectivity>
+<AverageFieldSize>1.78</AverageFieldSize>
+</Property>
+<Property name="PartCount">
+<Selectivity>100.0000%</Selectivity>
+<AverageFieldSize>1</AverageFieldSize>
+</Property>
+<Property name="Points">
+<Selectivity>100.0000%</Selectivity>
+<AverageFieldSize>1</AverageFieldSize>
+</Property>
+<SQLMap name="IDKEY">
+<BlockCount>-4</BlockCount>
+</SQLMap>
+</Storage>
+
+<Property name="PartCount">
+<Type>%Integer</Type>
+<Calculated>1</Calculated>
+<SqlComputeCode>set {PartCount} = ##class(School2015.Group).CalcPartCount({ID})</SqlComputeCode>
+<SqlComputed>1</SqlComputed>
+</Property>
+
+<Method name="PartCountGet">
+<ReturnType>%Integer</ReturnType>
+<ServerOnly>1</ServerOnly>
+<Implementation><![CDATA[    Quit ##class(School2015.Group).CalcPartCount(..%Id())
+]]></Implementation>
+</Method>
+
+<Method name="CalcPartCount">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>ID:%Integer</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+    set obj = ##class(School2015.Group).%OpenId(ID)
+    quit obj.Participants.Count()
+]]></Implementation>
+</Method>
+</Class>
+
+
+<Class name="School2015.Human">
+<Description>
+Human descriprion</Description>
+<Super>%Persistent,%Populate</Super>
+<TimeChanged>63813,38522.636264</TimeChanged>
+<TimeCreated>63813,23550.446383</TimeCreated>
+
+<Property name="Name">
+<Type>%String</Type>
+<Parameter name="POPSPEC" value="FirstName()"/>
+</Property>
+
+<Property name="Surname">
+<Type>%String</Type>
+<Parameter name="MAXLEN" value="100"/>
+<Parameter name="POPSPEC" value="LastName()"/>
+</Property>
+
+<UDLText name="T">
+<Content><![CDATA[
+// Property Contacts As array Of %String;
+
+]]></Content>
+</UDLText>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*Query QueryHumanContacts(ID As %String) As %Query(ROWSPEC = "Type:%String:Type,Value:%String:Value") [ SqlProc ]
+{
+}
+
+ClassMethod QueryHumanContactsExecute(ByRef qHandle As %Binary, ID As %String) As %Status
+{
+   set human = ##class(School2015.Human).%OpenId(ID) 
+   if '$IsObject(human) quit $$$ERROR() 
+   Set key = "" 
+   Do { 
+      Set email = human.Contacts.GetNext(.key) 
+      If (email '= "") { 
+         set $li(qHandle, *+1) = $lb(key, email) 
+      } 
+   } While (key '= "") 
+   kill ^||iter 
+   set ^||iter = 1 
+   Quit $$$OK
+}
+
+ClassMethod QueryHumanContactsClose(ByRef qHandle As %Binary) As %Status [ PlaceAfter = QueryHumanContactsExecute ]
+{
+	Quit $$$OK
+}
+
+ClassMethod QueryHumanContactsFetch(ByRef qHandle As %Binary, ByRef Row As %List, ByRef AtEnd As %Integer = 0) As %Status [ PlaceAfter = QueryHumanContactsExecute ]
+{
+   set rs=$get(qHandle) 
+   if $ll(rs)=0 { 
+      set Row="" 
+      set AtEnd=1 
+      quit $$$OK 
+   } 
+   if ^||iter <= $ll(rs) { 
+      set Row=$li(rs, ^||iter) 
+      set AtEnd=0 
+      set ^||iter = $increment(^||iter) 
+   } else { 
+      set Row="" 
+      set AtEnd=1 
+   } 
+   Quit $$$OK
+}*/
+]]></Content>
+</UDLText>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DataLocation>^School2015.HumanD</DataLocation>
+<DefaultData>HumanDefaultData</DefaultData>
+<IdLocation>^School2015.HumanD</IdLocation>
+<IndexLocation>^School2015.HumanI</IndexLocation>
+<StreamLocation>^School2015.HumanS</StreamLocation>
+<Data name="Contacts">
+<Attribute>Contacts</Attribute>
+<Structure>subnode</Structure>
+<Subscript>"Contacts"</Subscript>
+</Data>
+<Data name="HumanDefaultData">
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>Name</Value>
+</Value>
+<Value name="3">
+<Value>Surname</Value>
+</Value>
+</Data>
+</Storage>
+</Class>
+
+
+<Class name="School2015.Participant">
+<Description>
+Participan't description</Description>
+<Super>School2015.Human</Super>
+<TimeChanged>63813,40740.055685</TimeChanged>
+<TimeCreated>63813,23550.923273</TimeCreated>
+
+<Property name="Company">
+<Type>School2015.Company</Type>
+</Property>
+
+<Property name="Group">
+<Type>School2015.Group</Type>
+<Cardinality>one</Cardinality>
+<Inverse>Participants</Inverse>
+<Relationship>1</Relationship>
+</Property>
+
+<Index name="GroupIndex">
+<Properties>Group</Properties>
+</Index>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*Method OnPopulate() As %Status [ ServerOnly = 1 ]
+{
+	do ..Contacts.Clear()
+	set userName = $translate($extract(..Name, 1)_..Surname, " '.")
+	do ..Contacts.SetAt(userName, ##class(School2015.PopulateHelper).GenContactType(1))
+	set companyName = $translate(..Company.Name, " .'")
+	do ..Contacts.SetAt(userName_"@"_companyName_".com", ##class(School2015.PopulateHelper).GenContactType(2))
+	set phone = ##class(%Library.PopulateUtils).USPhone()
+	do ..Contacts.SetAt(phone, ##class(School2015.PopulateHelper).GenContactType(3))
+	quit $$$OK
+}
+*/
+]]></Content>
+</UDLText>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DefaultData>ParticipantDefaultData</DefaultData>
+<ExtentSize>150</ExtentSize>
+<Data name="ParticipantDefaultData">
+<Subscript>"Participant"</Subscript>
+<Value name="1">
+<Value>Company</Value>
+</Value>
+<Value name="2">
+<Value>Group</Value>
+</Value>
+<Value name="3">
+<Value>Carma</Value>
+</Value>
+</Data>
+<Property name="%%CLASSNAME">
+<Selectivity>100.0000%</Selectivity>
+<AverageFieldSize>24</AverageFieldSize>
+</Property>
+<Property name="%%ID">
+<Selectivity>1</Selectivity>
+<AverageFieldSize>2.28</AverageFieldSize>
+</Property>
+<Property name="Company">
+<Selectivity>0.6667%,Country:33.3333%,Name:0.6757%</Selectivity>
+<AverageFieldSize>28.23,Country:6.68,Name:17.55</AverageFieldSize>
+</Property>
+<Property name="Group">
+<Selectivity>1.5152%</Selectivity>
+<OutlierSelectivity>.333333:</OutlierSelectivity>
+<AverageFieldSize>1.23</AverageFieldSize>
+</Property>
+<Property name="Name">
+<Selectivity>1.0753%</Selectivity>
+<AverageFieldSize>5.3</AverageFieldSize>
+</Property>
+<Property name="Surname">
+<Selectivity>0.9709%</Selectivity>
+<AverageFieldSize>6.19</AverageFieldSize>
+</Property>
+<SQLMap name="GroupIndex">
+<BlockCount>-4</BlockCount>
+</SQLMap>
+</Storage>
+
+<Property name="Carma">
+<Type>%Integer</Type>
+</Property>
+</Class>
+
+
+<Class name="School2015.PopulateHelper">
+<Description>
+Helper to populate objects</Description>
+<TimeChanged>63813,28643.542323</TimeChanged>
+<TimeCreated>63813,24566.190933</TimeCreated>
+
+<Method name="GenContactType">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>type:%Integer</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+ set l = $lb("Scype", "Mail", "Phone")
+ quit $li(l, type)
+]]></Implementation>
+</Method>
+
+<Method name="GenStartingPoints">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[	quit 0
+]]></Implementation>
+</Method>
+
+<Method name="GenCountry">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set l = $lb("Russia", "Belorus", "Ukraine")
+	quit $li(l, $r($ll(l))+1)
+]]></Implementation>
+</Method>
+
+<Method name="GenTechnologie">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set l = $lb("REST", "Angular.JS", "Cache", "Ensamble", "JSON", 
+	            "React.JS", "DeepSee", "iKnow", "SQL", "Indices")
+	quit $li(l, $r($ll(l))+1)
+]]></Implementation>
+</Method>
+
+<Method name="GenProjectName">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+   set topic = ##class(%Library.PopulateUtils).Mission()
+   set topic = $extract(topic, 1, 50)
+   SET position=$LENGTH(topic)-$FIND($REVERSE(topic)," ")
+   quit $extract(topic, 1, position+1)
+]]></Implementation>
+</Method>
+
+<Method name="PopulateData">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	do ##class(School2015.Human).%KillExtent()
+	do ##class(School2015.Group).%KillExtent()
+	do ##class(School2015.Topic).%KillExtent()
+	
+	set m = 10	
+	do ##class(School2015.Participant).Populate(5*m)
+	do ##class(School2015.Group).Populate(5*m)
+	do ##class(School2015.Participant).Populate(10*m)	
+	do ##class(School2015.Topic).Populate(m)
+]]></Implementation>
+</Method>
+</Class>
+
+
+<Class name="School2015.Topic">
+<Description>
+Hackaton topic description</Description>
+<Super>%Persistent,%Populate</Super>
+<TimeChanged>63813,36779.261416</TimeChanged>
+<TimeCreated>63813,23551.856543</TimeCreated>
+
+<Property name="Name">
+<Type>%String</Type>
+<Parameter name="MAXLEN" value="100"/>
+<Parameter name="POPSPEC" value="##class(School2015.PopulateHelper).GenProjectName()"/>
+</Property>
+
+<Property name="Group">
+<Type>School2015.Group</Type>
+</Property>
+
+<Property name="Technologies">
+<Type>%String</Type>
+<Collection>list</Collection>
+<Parameter name="POPSPEC" value="##class(School2015.PopulateHelper).GenTechnologie():3"/>
+</Property>
+
+<Query name="QueryAllTopics">
+<Type>%SQLQuery</Type>
+<SqlProc>1</SqlProc>
+<SqlQuery><![CDATA[SELECT %ID,
+       Name,
+       "Group"->Leader->Name||' '||"Group"->Leader->Surname Leader,
+       "Group"->Points 
+  FROM School2015.Topic
+ ORDER BY Name]]></SqlQuery>
+<Parameter name="CONTAINID" value="1"/>
+</Query>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DataLocation>^School2015.TopicD</DataLocation>
+<DefaultData>TopicDefaultData</DefaultData>
+<IdLocation>^School2015.TopicD</IdLocation>
+<IndexLocation>^School2015.TopicI</IndexLocation>
+<StreamLocation>^School2015.TopicS</StreamLocation>
+<ExtentSize>10</ExtentSize>
+<Data name="TopicDefaultData">
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>Name</Value>
+</Value>
+<Value name="3">
+<Value>Group</Value>
+</Value>
+<Value name="4">
+<Value>Technologies</Value>
+</Value>
+</Data>
+<Property name="%%CLASSNAME">
+<Selectivity>100.0000%</Selectivity>
+<AverageFieldSize>1</AverageFieldSize>
+</Property>
+<Property name="%%ID">
+<Selectivity>1</Selectivity>
+<AverageFieldSize>1.1</AverageFieldSize>
+</Property>
+<Property name="Group">
+<Selectivity>11.1111%</Selectivity>
+<AverageFieldSize>1.6</AverageFieldSize>
+</Property>
+<Property name="Name">
+<Selectivity>12.5000%</Selectivity>
+<AverageFieldSize>44</AverageFieldSize>
+</Property>
+<Property name="Technologies">
+<Selectivity>11.1111%</Selectivity>
+<AverageFieldSize>14.7</AverageFieldSize>
+</Property>
+<SQLMap name="IDKEY">
+<BlockCount>-4</BlockCount>
+</SQLMap>
+</Storage>
+</Class>
+</Export>

@@ -203,7 +203,7 @@ function demo8() {
 
 
 
-cjs.connector.connect("http://172.16.2.172:57776/", "Samples", ["School2015"], function(cacheRes) {
+cjs.connector.connect("http://" + location.hostname + ":57772/", "USER", ["School2015"], function(cacheRes) {
 	$("#conn").text("Connected!");
 	$("#demo1").click(demo1);
 	$("#demo2").click(demo2);
