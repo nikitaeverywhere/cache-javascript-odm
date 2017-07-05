@@ -8,17 +8,17 @@ This project is a result of InterSystems Innovations School hackathon which had 
 
 ### Usage
 
-1. Include the script to your application (see [src/index.html](src/index.html) example file);
-2. Import [src/cls/CJS.xml](src/cls/CJS.xml) file to Caché ([src/cls/School2015.xml](src/cls/School2015.xml) is a demo package);
-3. Create new web application named "CJS" via system management portal, put CJS.REST.cls as a dispatch class there;
-4. Now you are ready to use it! Connect to Caché using appropriate URL as in src/test.js file and try all the features.
+1. Include the scripts to your application (see [src/index.html](src/index.html) example file);
+2. Import and compile [DemoInstaller.xml](DemoInstaller.xml) to Caché (or import from sources, [src](src) directory);
+3. A new web application named "CJS" will be created during compilation;
+4. Now, serve the [src/client](src/client) directory and check the demo. Demo defaults to localhost and port number 57772, see [test.js](src/client/test.js).
 
 ### Features
 
 ```js
 // .connect("Server address and port", "Namespace", [Any Packages/classes], callback())
 // Note: all the callbacks represented here are asynchronous and may be triggered in any order.
-cjs.connector.connect("http://172.16.2.172:57776/", "Samples", ["School2015"], function (cache) {
+cjs.connector.connect("http://localhost:57772", "USER", ["School2015"], function (cache) {
 
   // creating a new object
   var p = new cache.School2015.Participant();
